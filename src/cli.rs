@@ -32,8 +32,16 @@ pub struct ConvertOptions {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InstallOptions {
+    pub input: PathBuf,
+    pub assume_yes: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Action {
     Convert(ConvertOptions),
+    Install(InstallOptions),
+    RegisterHandler,
     Help,
     Version,
     Update,
@@ -49,6 +57,18 @@ where
     S: Into<OsString>,
 {
     let arguments: Vec<OsString> = arguments.into_iter().map(Into::into).collect();
+    if arguments.first().and_then(|value| value.to_str()) == Some("install") {
+        return parse_install(arguments.into_iter().skip(1));
+    }
+    if arguments.first().and_then(|value| value.to_str()) == Some("register-handler") {
+        if arguments.len() != 1 {
+            return Err(AppError::new(
+                "register-handler does not accept additional arguments.",
+            ));
+        }
+        return Ok(Action::RegisterHandler);
+    }
+
     let mut input: Option<PathBuf> = None;
     let mut output_dir = None;
     let mut compression_level = 3_u8;
@@ -179,6 +199,41 @@ where
     }))
 }
 
+fn parse_install<I>(arguments: I) -> Result<Action>
+where
+    I: IntoIterator<Item = OsString>,
+{
+    let mut input = None;
+    let mut assume_yes = false;
+    let mut positional_only = false;
+
+    for argument in arguments {
+        if positional_only || !is_option(&argument) {
+            set_input(&mut input, &argument)?;
+            continue;
+        }
+
+        if argument == "--" {
+            positional_only = true;
+            continue;
+        }
+
+        let text = argument
+            .to_str()
+            .ok_or_else(|| AppError::new("An install option is not valid UTF-8."))?;
+        match text {
+            "-y" | "--yes" => assume_yes = true,
+            "-h" | "--help" => return Ok(Action::Help),
+            _ => return Err(AppError::new(format!("Unknown install option: {text}"))),
+        }
+    }
+
+    let input = input.ok_or_else(|| {
+        AppError::new("No Debian package was given. Use debtap-rs install package.deb.")
+    })?;
+    Ok(Action::Install(InstallOptions { input, assume_yes }))
+}
+
 fn is_option(argument: &OsStr) -> bool {
     argument.as_encoded_bytes().first() == Some(&b'-')
 }
@@ -290,6 +345,8 @@ pub fn help() -> &'static str {
 \n\
 Usage:\n\
   debtap-rs [options] package.deb\n\
+  debtap-rs install [--yes] package.deb\n\
+  debtap-rs register-handler\n\
   debtap-rs --update\n\
 \n\
 Compatible options:\n\
@@ -311,7 +368,12 @@ Additional options:\n\
       --source-date-epoch N Set a deterministic build time\n\
       --no-mtree            Do not add .MTREE\n\
       --keep-work           Keep the private work directory\n\
-      --force               Replace an existing output package\n"
+      --force               Replace an existing output package\n\
+\n\
+Install commands:\n\
+  install FILE              Convert, review, authorize, and install FILE\n\
+  install --yes FILE        Skip the text confirmation (authorization remains)\n\
+  register-handler          Make Debforge the default .deb file handler\n"
 }
 
 #[cfg(test)]
@@ -368,6 +430,33 @@ mod tests {
         let error = parse_from(["--compression-level", "20", "one.deb"])
             .expect_err("must reject the level");
         assert!(error.to_string().contains("1 through 19"));
+    }
+
+    #[test]
+    fn parses_install_and_handler_actions() {
+        let action = parse_from(["install", "--yes", "/tmp/app name.deb"])
+            .expect("install arguments must parse");
+        let Action::Install(options) = action else {
+            panic!("install action expected");
+        };
+        assert!(options.assume_yes);
+        assert_eq!(options.input, PathBuf::from("/tmp/app name.deb"));
+
+        assert_eq!(
+            parse_from(["register-handler"]).expect("handler action"),
+            Action::RegisterHandler
+        );
+    }
+
+    #[test]
+    fn rejects_unknown_install_options_and_extra_handler_arguments() {
+        let error = parse_from(["install", "--force", "app.deb"])
+            .expect_err("install must reject converter options");
+        assert!(error.to_string().contains("Unknown install option"));
+
+        let error = parse_from(["register-handler", "extra"])
+            .expect_err("handler action must reject arguments");
+        assert!(error.to_string().contains("does not accept"));
     }
 
     use std::path::PathBuf;

@@ -1,9 +1,13 @@
 pub mod archive;
 pub mod cli;
+pub mod compatibility;
 pub mod control;
 pub mod dependency;
+pub mod digest;
 pub mod error;
+pub mod installer;
 pub mod package;
+pub mod privileged;
 pub mod process;
 pub mod scripts;
 pub mod transform;

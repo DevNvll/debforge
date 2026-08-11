@@ -1,0 +1,52 @@
+pkgname=debforge
+pkgver=0.2.0
+pkgrel=1
+pkgdesc='Fast and safe Debian-to-Arch package converter and desktop installer'
+arch=('x86_64' 'aarch64')
+url='https://github.com/DevNvll/debforge'
+license=('GPL-2.0-or-later')
+depends=(
+  'binutils'
+  'coreutils'
+  'desktop-file-utils'
+  'hicolor-icon-theme'
+  'libarchive'
+  'pacman'
+  'polkit'
+  'shared-mime-info'
+  'xdg-utils'
+  'zstd'
+)
+makedepends=('cargo' 'git')
+optdepends=('libnotify: desktop installation notifications')
+options=('!debug')
+source=("git+$url.git#tag=v$pkgver")
+sha256sums=('SKIP')
+
+build() {
+  cd "$pkgname"
+  cargo build --release --locked --offline
+}
+
+check() {
+  cd "$pkgname"
+  cargo test --locked --offline
+}
+
+package() {
+  cd "$pkgname"
+
+  install -Dm0755 target/release/debtap-rs "$pkgdir/usr/bin/debtap-rs"
+  ln -s debtap-rs "$pkgdir/usr/bin/debforge"
+  install -Dm0755 target/release/debforge-helper \
+    "$pkgdir/usr/lib/debforge/debforge-helper"
+  install -Dm0644 assets/io.github.devnvll.Debforge.desktop \
+    "$pkgdir/usr/share/applications/io.github.devnvll.Debforge.desktop"
+  install -Dm0644 assets/io.github.devnvll.Debforge.svg \
+    "$pkgdir/usr/share/icons/hicolor/scalable/apps/io.github.devnvll.Debforge.svg"
+  install -Dm0644 assets/org.devnvll.debforge.policy \
+    "$pkgdir/usr/share/polkit-1/actions/org.devnvll.debforge.policy"
+  install -Dm0644 README.md "$pkgdir/usr/share/doc/debforge/README.md"
+  install -Dm0644 ARCHITECTURE.md "$pkgdir/usr/share/doc/debforge/ARCHITECTURE.md"
+  install -Dm0644 LICENSE "$pkgdir/usr/share/licenses/debforge/LICENSE"
+}

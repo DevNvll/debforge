@@ -46,6 +46,7 @@ struct MaintainerScripts {
     postinst: Option<String>,
     prerm: Option<String>,
     postrm: Option<String>,
+    triggers: Option<String>,
 }
 
 impl MaintainerScripts {
@@ -55,10 +56,19 @@ impl MaintainerScripts {
             postinst: read_optional(control_dir, "postinst")?,
             prerm: read_optional(control_dir, "prerm")?,
             postrm: read_optional(control_dir, "postrm")?,
+            triggers: read_optional(control_dir, "triggers")?,
         })
     }
 
     fn present_names(&self) -> Vec<&'static str> {
+        let mut names = self.present_script_names();
+        if self.triggers.is_some() {
+            names.push("triggers");
+        }
+        names
+    }
+
+    fn present_script_names(&self) -> Vec<&'static str> {
         let mut names = Vec::new();
         if self.preinst.is_some() {
             names.push("preinst");
@@ -112,6 +122,13 @@ fn generate_safe_output(scripts: &MaintainerScripts) -> ScriptOutput {
     .flatten()
     .collect::<Vec<_>>()
     .join("\n");
+
+    if scripts.triggers.is_some() {
+        warnings.push(
+            "Debian dpkg triggers were not copied; Pacman transaction hooks will handle only standard cache updates."
+                .to_string(),
+        );
+    }
 
     for (needle, message) in [
         ("/etc/apt", "Debian repository changes were not copied."),
@@ -170,19 +187,20 @@ fn generate_raw_output(scripts: &MaintainerScripts) -> ScriptOutput {
         append_function(&mut output, "post_remove", &["remove"], body);
     }
 
-    let install = if scripts.present_names().is_empty() {
+    let install = if scripts.present_script_names().is_empty() {
         None
     } else {
         Some(output)
     };
 
-    ScriptOutput {
-        install,
-        warnings: vec![
-            "Raw script mode can run Debian-only commands as root.".to_string(),
-            "Upgrade script arguments are an approximation and require review.".to_string(),
-        ],
+    let mut warnings = vec![
+        "Raw script mode can run Debian-only commands as root.".to_string(),
+        "Upgrade script arguments are an approximation and require review.".to_string(),
+    ];
+    if scripts.triggers.is_some() {
+        warnings.push("Raw mode cannot translate Debian dpkg triggers.".to_string());
     }
+    ScriptOutput { install, warnings }
 }
 
 fn append_function(output: &mut String, function: &str, arguments: &[&str], body: &str) {
@@ -248,12 +266,14 @@ mod tests {
             "#!/bin/sh\nset -e\napt-get update\nmkdir -p /etc/apt/sources.list.d\nupdate-alternatives --install /usr/bin/x x /opt/x 1\n",
         )
         .expect("script");
+        fs::write(directory.join("triggers"), "interest update-mime\n").expect("triggers");
 
         let result = generate_install_script(ScriptPolicy::Safe, &directory).expect("output");
         assert!(result.install.is_none());
         let warnings = result.warnings.join(" ");
         assert!(warnings.contains("repository"));
         assert!(warnings.contains("alternatives"));
+        assert!(warnings.contains("dpkg triggers"));
         fs::remove_dir_all(directory).expect("cleanup");
     }
 

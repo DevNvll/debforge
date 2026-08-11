@@ -1,14 +1,17 @@
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::{Command, ExitCode};
+use std::process::ExitCode;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use debtap_rs::archive::{self, PackageOptions};
 use debtap_rs::cli::{self, Action, ConvertOptions, PkgbuildMode};
+use debtap_rs::compatibility;
 use debtap_rs::control::{ArchVersion, DebianControl, DebianMetadata, RelationField};
 use debtap_rs::dependency::{DependencyResolver, PackageCatalog, RelationSet, Resolution};
+use debtap_rs::digest;
 use debtap_rs::error::{AppError, Context, Result};
+use debtap_rs::installer;
 use debtap_rs::package::{self, ArchPackageMetadata, PkgbuildSpec};
 use debtap_rs::process;
 use debtap_rs::scripts;
@@ -35,6 +38,8 @@ fn run() -> Result<()> {
             println!("debtap-rs {}", cli::VERSION);
             Ok(())
         }
+        Action::Install(options) => installer::install(&options),
+        Action::RegisterHandler => installer::register_handler(),
         Action::Update => update_catalog(),
         Action::Convert(options) => convert(options),
     }
@@ -128,12 +133,21 @@ fn convert(options: ConvertOptions) -> Result<()> {
     )?;
     warnings.extend(transform.warnings);
 
+    progress(
+        &options,
+        "Checking ELF and privileged-file compatibility...",
+    );
+    let compatibility =
+        compatibility::inspect_payload(workspace.payload_dir(), &debian.architecture)?;
+    warnings.extend(compatibility.warnings());
+
     let script_output =
         scripts::generate_install_script(options.script_policy, workspace.control_dir())?;
     warnings.extend(script_output.warnings);
 
     let arch_version = ArchVersion::from_debian(&debian.debian_version)?;
     let builddate = build_timestamp(options.source_date_epoch)?;
+    let source_sha256 = digest::sha256_file(&input)?;
     let metadata = ArchPackageMetadata {
         pkgname: debian.name.clone(),
         pkgbase: debian.source.clone(),
@@ -157,6 +171,8 @@ fn convert(options: ConvertOptions) -> Result<()> {
         debian_package: debian.name.clone(),
         debian_version: debian.debian_version.clone(),
         debian_architecture: debian.debian_architecture.clone(),
+        debian_sha256: source_sha256.clone(),
+        conversion_warnings: warnings.clone(),
     };
     metadata.validate()?;
 
@@ -212,7 +228,6 @@ fn convert(options: ConvertOptions) -> Result<()> {
                 pkgbuild_directory.display()
             ))?;
         }
-        let hash = sha256_file(&input)?;
         let data_member = deb_archive
             .data_member_name
             .to_str()
@@ -223,7 +238,7 @@ fn convert(options: ConvertOptions) -> Result<()> {
                 metadata: &metadata,
                 source_deb: &input,
                 data_member,
-                sha256: &hash,
+                sha256: &source_sha256,
             },
         )?;
         generated.push(path);
@@ -401,17 +416,6 @@ fn parse_licenses(source: Option<&str>) -> Vec<String> {
         .filter(|value| !value.is_empty())
         .map(str::to_string)
         .collect()
-}
-
-fn sha256_file(path: &Path) -> Result<String> {
-    let sha256sum = process::require_tool("sha256sum")?;
-    let output = process::capture_text(Command::new(sha256sum).arg("--").arg(path))?;
-    output
-        .split_whitespace()
-        .next()
-        .filter(|value| value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit()))
-        .map(str::to_string)
-        .ok_or_else(|| AppError::new("sha256sum returned an invalid digest."))
 }
 
 fn progress(options: &ConvertOptions, message: &str) {
