@@ -1,0 +1,24 @@
+[package]
+name = "debtap-rs"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "A fast and safe Debian-to-Arch package converter"
+license = "GPL-2.0-or-later"
+repository = "https://github.com/DevNvll/debforge"
+
+[[bin]]
+name = "debtap-rs"
+path = "src/main.rs"
+
+[profile.release]
+codegen-units = 1
+lto = "thin"
+panic = "abort"
+strip = "symbols"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = "warn"
