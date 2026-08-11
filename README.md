@@ -1,8 +1,8 @@
 # Debforge
 
-Debforge is a fast Debian-to-Arch package converter written in Rust. Its
-command-line program is `debtap-rs`. It is a clean rewrite of the main Debtap
-conversion workflow.
+Debforge is a fast Debian-to-Arch package converter and reviewed desktop
+installer written in Rust. The compatible converter command is `debtap-rs`.
+The system package also provides the shorter `debforge` command.
 
 The converter removes the main Debtap performance problem. It does not scan
 large Debian and Ubuntu `Contents` files once for each dependency. It reads the
@@ -23,6 +23,7 @@ maintainer behavior. Review warnings before you install the result.
 - `bsdtar`
 - `zstd`
 - `pacman` for dependency selection and output validation
+- `sha256sum` for source and installation integrity
 
 There are no third-party Rust dependencies.
 
@@ -32,13 +33,27 @@ There are no third-party Rust dependencies.
 cargo build --release --locked --offline
 ```
 
-The output binary is `target/release/debtap-rs`.
+The output binaries are `target/release/debtap-rs` and
+`target/release/debforge-helper`.
 
-To install it for the current user:
+For secure desktop integration, build and install the local Arch package:
+
+```sh
+./scripts/install-system.sh
+```
+
+This installs the converter, root-owned helper, Polkit policy, desktop file,
+and icon. It also makes Debforge the default `.deb` application for the current
+user.
+
+To install only the converter for the current user:
 
 ```sh
 ./scripts/install-user.sh
 ```
+
+The user-only installation cannot install packages until the secure system
+helper is installed.
 
 ## Use
 
@@ -46,6 +61,23 @@ To install it for the current user:
 debtap-rs application.deb
 debtap-rs --output /path/to/output application.deb
 debtap-rs --compression-level 7 application.deb
+```
+
+To convert, review, authorize, and install a package:
+
+```sh
+debforge install application.deb
+```
+
+The review shows Pacman metadata, the planned transaction, file count, native
+package name conflicts, installed versions, and all conversion warnings. The
+root helper copies the reviewed package into a root-only directory and checks
+its SHA-256 value again before Pacman reads it.
+
+To restore the file association later:
+
+```sh
+debforge register-handler
 ```
 
 The default Zstandard level is 3. A higher value makes a smaller package and
@@ -97,6 +129,27 @@ This rule stops foreign root code such as these operations:
 
 `--scripts raw` wraps the original scripts in Arch install functions. This mode
 is unsafe and is only for manual review. The command prints a warning.
+
+Debian `triggers` data is never executed. Safe mode records its omission in the
+generated package so that the installation review can show it.
+
+## Compatibility inspection
+
+Normal conversion scans ELF files without starting one process per file. It
+checks CPU architecture, ELF class, byte order, interpreter paths, required
+shared-library names, Debian multiarch runtime paths, setuid and setgid modes,
+and unsupported special files. A definite architecture mismatch or special
+file stops conversion. Missing runtime items become installation warnings.
+
+The scan does not prove complete ABI compatibility. A vendor package can still
+require newer GLIBC or GLIBCXX symbol versions than the system provides.
+
+## Installation receipts
+
+Successful desktop installations write a private receipt below
+`$XDG_STATE_HOME/debforge/receipts`, or `~/.local/state/debforge/receipts`.
+Each receipt records source and converted-package hashes, the package version,
+the Debforge version, and installation time.
 
 ## Output validation
 

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC
+ "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<policyconfig>
+  <vendor>Debforge</vendor>
+  <vendor_url>https://github.com/DevNvll/debforge</vendor_url>
+  <icon_name>io.github.devnvll.Debforge</icon_name>
+
+  <action id="org.devnvll.debforge.install">
+    <description>Install a converted Debian package</description>
+    <message>Authentication is required to install this converted package</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/lib/debforge/debforge-helper</annotate>
+  </action>
+</policyconfig>

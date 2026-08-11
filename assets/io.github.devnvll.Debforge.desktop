@@ -1,0 +1,15 @@
+[Desktop Entry]
+Type=Application
+Version=1.5
+Name=Install Debian Package
+GenericName=Package Installer
+Comment=Review, convert, and install a Debian package on Arch Linux
+Icon=io.github.devnvll.Debforge
+Exec=debforge install %f
+TryExec=debforge
+Terminal=true
+NoDisplay=false
+StartupNotify=true
+Categories=System;
+Keywords=deb;debian;package;installer;arch;
+MimeType=application/vnd.debian.binary-package;application/x-deb;

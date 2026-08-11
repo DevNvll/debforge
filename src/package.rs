@@ -2,6 +2,7 @@ use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
+use crate::digest;
 use crate::error::{AppError, Context, Result};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -28,6 +29,8 @@ pub struct ArchPackageMetadata {
     pub debian_package: String,
     pub debian_version: String,
     pub debian_architecture: String,
+    pub debian_sha256: String,
+    pub conversion_warnings: Vec<String>,
 }
 
 impl ArchPackageMetadata {
@@ -41,6 +44,7 @@ impl ArchPackageMetadata {
             ("Debian package", self.debian_package.as_str()),
             ("Debian version", self.debian_version.as_str()),
             ("Debian architecture", self.debian_architecture.as_str()),
+            ("Debian SHA-256", self.debian_sha256.as_str()),
         ] {
             validate_value(name, value)?;
         }
@@ -48,6 +52,10 @@ impl ArchPackageMetadata {
             return Err(AppError::new(
                 "The package version and architecture must not be empty.",
             ));
+        }
+        digest::normalize_sha256(&self.debian_sha256)?;
+        for warning in &self.conversion_warnings {
+            validate_value("conversion warning", warning)?;
         }
         Ok(())
     }
@@ -73,6 +81,14 @@ impl ArchPackageMetadata {
             "xdata",
             &format!("debian-architecture={}", self.debian_architecture),
         )?;
+        write_value(
+            &mut output,
+            "xdata",
+            &format!("debian-sha256={}", self.debian_sha256),
+        )?;
+        for warning in sorted_unique(&self.conversion_warnings) {
+            write_value(&mut output, "xdata", &format!("debforge-warning={warning}"))?;
+        }
         write_value(&mut output, "pkgver", &self.full_version)?;
         if let Some(description) = self
             .description
@@ -356,6 +372,8 @@ mod tests {
             debian_package: "chatgpt".to_string(),
             debian_version: "26.803.81509".to_string(),
             debian_architecture: "amd64".to_string(),
+            debian_sha256: "a".repeat(64),
+            conversion_warnings: vec!["A review warning.".to_string()],
         }
     }
 
@@ -367,6 +385,8 @@ mod tests {
         assert!(output.contains("size = 1312001200\n"));
         assert!(output.contains("xdata = pkgtype=pkg\n"));
         assert!(output.contains("xdata = debian-version=26.803.81509\n"));
+        assert!(output.contains(&format!("xdata = debian-sha256={}\n", "a".repeat(64))));
+        assert!(output.contains("xdata = debforge-warning=A review warning.\n"));
         assert!(output.contains("depend = glibc\n"));
     }
 
